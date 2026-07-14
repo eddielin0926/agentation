@@ -6,6 +6,7 @@
     "dev": "pnpm --filter agentation watch & pnpm --filter feedback-tool-example dev",
     "build": "pnpm --filter agentation build",
     "example": "pnpm --filter feedback-tool-example dev",
+    "vite:example": "pnpm --filter agentation-vite-example dev",
     "pack": "cd package && pnpm pack",
     "mcp": "pnpm --filter agentation-mcp start",
     "publish:agentation": "pnpm --filter agentation publish --access public",

@@ -3,3 +3,4 @@ packages:
   - 'package/example'
   - 'mcp'
   - 'vite-plugin'
+  - 'vite-example'

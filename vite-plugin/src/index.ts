@@ -56,7 +56,7 @@ type BridgeStatus = {
   };
   agent: {
     connected: boolean;
-    type: "unknown";
+    type: "unknown" | "mock" | "command" | "custom";
   };
   capabilities: string[];
 };
@@ -110,7 +110,11 @@ function sendJson(res: ServerResponse, status: number, data: unknown) {
   res.end(JSON.stringify(data));
 }
 
-function sendFallbackStatus(res: ServerResponse, bridgeUrl: string) {
+function sendFallbackStatus(
+  res: ServerResponse,
+  bridgeUrl: string,
+  agentType: BridgeStatus["agent"]["type"],
+) {
   const status: BridgeStatus = {
     ok: true,
     mode: "vite",
@@ -119,8 +123,8 @@ function sendFallbackStatus(res: ServerResponse, bridgeUrl: string) {
       url: bridgeUrl,
     },
     agent: {
-      connected: false,
-      type: "unknown",
+      connected: agentType !== "unknown",
+      type: agentType,
     },
     capabilities: ["status", "events", "comments", "replies", "status_updates", "sse"],
   };
@@ -330,6 +334,13 @@ export function agentation(options: AgentationDevBridgeOptions = {}): Plugin {
   const prefix = normalizePrefix(options.prefix ?? DEFAULT_PREFIX);
   const bridgeUrl = getBridgeUrl(options);
   const fallbackStatus = options.fallbackStatus ?? true;
+  const agentType: BridgeStatus["agent"]["type"] = options.agentCommand
+    ? "command"
+    : options.agent === "mock"
+      ? "mock"
+      : typeof options.agent === "function"
+        ? "custom"
+        : "unknown";
   const annotations = new Map<string, BridgeAnnotation>();
   const clients = new Set<ServerResponse>();
   let sequence = 0;
@@ -458,7 +469,7 @@ export function agentation(options: AgentationDevBridgeOptions = {}): Plugin {
           await proxyToBridge(req, res, targetUrl, body);
         } catch {
           if (fallbackStatus && req.method === "GET" && url.pathname === `${prefix}/status`) {
-            sendFallbackStatus(res, bridgeUrl);
+            sendFallbackStatus(res, bridgeUrl, agentType);
             return;
           }
 
