@@ -180,6 +180,20 @@
   padding-bottom: 2px;
 }
 
+.markerStatus {
+  display: block;
+  margin-bottom: 0.1875rem;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.42);
+  text-transform: uppercase;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 // Light mode overrides
 [data-agentation-theme="light"] {
   .markerTooltip {
@@ -194,6 +208,10 @@
 
     .markerNote {
       color: rgba(0, 0, 0, 0.85);
+    }
+
+    .markerStatus {
+      color: rgba(0, 0, 0, 0.42);
     }
   }
 }

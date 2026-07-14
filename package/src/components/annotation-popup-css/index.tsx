@@ -1,6 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
+import type { AnnotationStatus, ThreadMessage } from "../../types";
+import {
+  ANNOTATION_STATUS_OPTIONS,
+  getAnnotationStatusLabel,
+  getThreadRoleLabel,
+} from "../../utils/annotation-thread";
 import styles from "./styles.module.scss";
 import { IconTrash } from "../icons";
 import { originalSetTimeout } from "../../utils/freeze-animations";
@@ -57,6 +63,14 @@ export interface AnnotationPopupCSSProps {
   lightMode?: boolean;
   /** Computed styles for the selected element */
   computedStyles?: Record<string, string>;
+  /** Optional conversation thread for edit/comment mode */
+  thread?: ThreadMessage[];
+  /** Current annotation status */
+  status?: AnnotationStatus;
+  /** Called when the user replies to the thread */
+  onReply?: (text: string) => void;
+  /** Called when the status changes */
+  onStatusChange?: (status: AnnotationStatus) => void;
 }
 
 export interface AnnotationPopupCSSHandle {
@@ -85,15 +99,22 @@ export const AnnotationPopupCSS = forwardRef<AnnotationPopupCSSHandle, Annotatio
       isExiting = false,
       lightMode = false,
       computedStyles,
+      thread = [],
+      status,
+      onReply,
+      onStatusChange,
     },
     ref
   ) {
     const [text, setText] = useState(initialValue);
+    const [replyText, setReplyText] = useState("");
+    const [isReplyFocused, setIsReplyFocused] = useState(false);
     const [isShaking, setIsShaking] = useState(false);
     const [animState, setAnimState] = useState<"initial" | "enter" | "entered" | "exit">("initial");
     const [isFocused, setIsFocused] = useState(false);
     const [isStylesExpanded, setIsStylesExpanded] = useState(false); // Computed styles accordion state
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const replyTextareaRef = useRef<HTMLTextAreaElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
     const cancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -160,6 +181,14 @@ export const AnnotationPopupCSS = forwardRef<AnnotationPopupCSSHandle, Annotatio
       onSubmit(text.trim());
     }, [text, onSubmit]);
 
+    const handleReplySubmit = useCallback(() => {
+      const trimmed = replyText.trim();
+      if (!trimmed || !onReply) return;
+      onReply(trimmed);
+      setReplyText("");
+      originalSetTimeout(() => focusBypassingTraps(replyTextareaRef.current), 0);
+    }, [replyText, onReply]);
+
     // Handle keyboard
     const handleKeyDown = useCallback(
       (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -174,6 +203,21 @@ export const AnnotationPopupCSS = forwardRef<AnnotationPopupCSSHandle, Annotatio
         }
       },
       [handleSubmit, handleCancel]
+    );
+
+    const handleReplyKeyDown = useCallback(
+      (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        e.stopPropagation();
+        if (e.nativeEvent.isComposing) return;
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          handleReplySubmit();
+        }
+        if (e.key === "Escape") {
+          handleCancel();
+        }
+      },
+      [handleReplySubmit, handleCancel]
     );
 
     const popupClassName = [
@@ -256,6 +300,51 @@ export const AnnotationPopupCSS = forwardRef<AnnotationPopupCSSHandle, Annotatio
           </div>
         )}
 
+        {(status || thread.length > 0) && (
+          <div className={styles.threadPanel}>
+            {status && (
+              <div className={styles.statusRow}>
+                <span className={styles.statusLabel}>Status</span>
+                {onStatusChange ? (
+                  <select
+                    className={styles.statusSelect}
+                    value={status}
+                    onChange={(e) => onStatusChange(e.target.value as AnnotationStatus)}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {ANNOTATION_STATUS_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {getAnnotationStatusLabel(option)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className={styles.statusPill}>{getAnnotationStatusLabel(status)}</span>
+                )}
+              </div>
+            )}
+
+            {thread.length > 0 && (
+              <div className={styles.thread}>
+                {thread.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`${styles.threadMessage} ${styles[message.role]}`}
+                  >
+                    <div className={styles.threadMeta}>
+                      <span>{getThreadRoleLabel(message.role)}</span>
+                      {message.kind && message.kind !== "comment" && (
+                        <span>{message.kind.replace(/_/g, " ")}</span>
+                      )}
+                    </div>
+                    <div className={styles.threadContent}>{message.content}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <textarea
           ref={textareaRef}
           className={styles.textarea}
@@ -268,6 +357,35 @@ export const AnnotationPopupCSS = forwardRef<AnnotationPopupCSSHandle, Annotatio
           rows={2}
           onKeyDown={handleKeyDown}
         />
+
+        {onReply && (
+          <div className={styles.replyBox}>
+            <textarea
+              ref={replyTextareaRef}
+              className={styles.replyTextarea}
+              style={{ borderColor: isReplyFocused ? accentColor : undefined }}
+              placeholder="Reply in this thread..."
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              onFocus={() => setIsReplyFocused(true)}
+              onBlur={() => setIsReplyFocused(false)}
+              rows={2}
+              onKeyDown={handleReplyKeyDown}
+            />
+            <button
+              className={styles.replySubmit}
+              style={{
+                backgroundColor: accentColor,
+                opacity: replyText.trim() ? 1 : 0.4,
+              }}
+              onClick={handleReplySubmit}
+              disabled={!replyText.trim()}
+              type="button"
+            >
+              Reply
+            </button>
+          </div>
+        )}
 
         <div className={styles.actions}>
           {onDelete && (

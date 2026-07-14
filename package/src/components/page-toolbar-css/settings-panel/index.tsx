@@ -1,12 +1,11 @@
 import { COLOR_OPTIONS, ToolbarSettings } from "..";
+import type { ConnectionStatus, DevBridgeInfo } from "../../../utils/dev-bridge";
 import { OUTPUT_DETAIL_OPTIONS } from "../../../utils/generate-output";
 import { HelpTooltip } from "../../help-tooltip";
 import { IconChevronLeft, IconMoon, IconSun } from "../../icons";
 import { Switch } from "../../switch";
 import { CheckboxField } from "./checkbox-field";
 import styles from "./styles.module.scss";
-
-type ConnectionStatus = "disconnected" | "connecting" | "connected";
 
 export type SettingsPanelProps = {
   settings: ToolbarSettings;
@@ -19,6 +18,8 @@ export type SettingsPanelProps = {
 
   connectionStatus: ConnectionStatus;
   endpoint?: string;
+  devBridgeStatus?: ConnectionStatus;
+  devBridgeInfo?: DevBridgeInfo | null;
 
   /** Whether the panel is mounted (controls enter/exit class) */
   isVisible: boolean;
@@ -40,6 +41,8 @@ export function SettingsPanel({
   isDevMode,
   connectionStatus,
   endpoint,
+  devBridgeStatus = "disconnected",
+  devBridgeInfo,
   isVisible,
   toolbarNearBottom,
   settingsPage,
@@ -234,6 +237,11 @@ export function SettingsPanel({
                   className={`${styles.mcpNavIndicator} ${styles[connectionStatus]}`}
                 />
               )}
+              {!endpoint && devBridgeStatus !== "disconnected" && (
+                <span
+                  className={`${styles.mcpNavIndicator} ${styles[devBridgeStatus]}`}
+                />
+              )}
               <svg
                 width="16"
                 height="16"
@@ -264,6 +272,36 @@ export function SettingsPanel({
             <IconChevronLeft size={16} />
             <span>Manage MCP & Webhooks</span>
           </button>
+
+          <div className={styles.divider}></div>
+
+          {/* Dev bridge section */}
+          <div className={styles.settingsSection}>
+            <div className={styles.settingsRow}>
+              <span className={styles.automationHeader}>
+                Dev Bridge
+                <HelpTooltip content="Auto-detects same-origin /__agentation/* routes exposed by a local dev server or Vite proxy." />
+              </span>
+              <div
+                className={`${styles.mcpStatusDot} ${styles[devBridgeStatus]}`}
+                title={
+                  devBridgeStatus === "connected"
+                    ? "Connected"
+                    : devBridgeStatus === "connecting"
+                      ? "Connecting..."
+                      : "Not detected"
+                }
+              />
+            </div>
+            <p className={styles.automationDescription}>
+              {devBridgeStatus === "connected"
+                ? `Detected /__agentation/*${devBridgeInfo?.agent?.type ? ` with ${devBridgeInfo.agent.type}` : ""}.`
+                : "No same-origin /__agentation/* bridge detected."}
+              {devBridgeInfo?.capabilities?.length
+                ? ` Capabilities: ${devBridgeInfo.capabilities.join(", ")}.`
+                : ""}
+            </p>
+          </div>
 
           <div className={styles.divider}></div>
 

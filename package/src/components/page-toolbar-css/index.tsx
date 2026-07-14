@@ -83,7 +83,26 @@ import {
   originalRequestAnimationFrame,
 } from "../../utils/freeze-animations";
 
-import type { Annotation } from "../../types";
+import type { Annotation, AnnotationStatus } from "../../types";
+import {
+  createThreadMessage,
+  getAnnotationStatusLabel,
+  getAnnotationThread,
+  isRenderableAnnotation,
+  updateAnnotationComment,
+  withThread,
+} from "../../utils/annotation-thread";
+import {
+  createDevBridgeComment,
+  createDevBridgeEventSource,
+  getDevBridgeStatus,
+  hasDevBridgeEventStream,
+  replyToDevBridgeComment,
+  updateDevBridgeComment,
+  updateDevBridgeCommentStatus,
+  type ConnectionStatus,
+  type DevBridgeInfo,
+} from "../../utils/dev-bridge";
 import styles from "./styles.module.scss";
 import { generateOutput } from "../../utils/generate-output";
 import { AnnotationMarker, ExitingMarker, PendingMarker } from "./annotation-marker";
@@ -143,7 +162,6 @@ export type OutputDetailLevel = "compact" | "standard" | "detailed" | "forensic"
 // ReactComponentMode is now derived from outputDetail when reactEnabled is true
 export type ReactComponentMode = "smart" | "filtered" | "all" | "off";
 type MarkerClickBehavior = "edit" | "delete";
-
 export type ToolbarSettings = {
   outputDetail: OutputDetailLevel;
   autoClearAfterCopy: boolean;
@@ -260,10 +278,6 @@ function isElementFixed(element: HTMLElement): boolean {
     current = current.parentElement;
   }
   return false;
-}
-
-function isRenderableAnnotation(annotation: Annotation): boolean {
-  return annotation.status !== "resolved" && annotation.status !== "dismissed";
 }
 
 function detectSourceFile(element: Element): string | undefined {
@@ -588,8 +602,15 @@ const [settings, setSettings] = useState<ToolbarSettings>(() => {
   );
   const sessionInitializedRef = useRef(false);
   const [connectionStatus, setConnectionStatus] = useState<
-    "disconnected" | "connecting" | "connected"
+    ConnectionStatus
   >(endpoint ? "connecting" : "disconnected");
+  const [devBridgeStatus, setDevBridgeStatus] = useState<ConnectionStatus>(
+    "disconnected",
+  );
+  const [devBridgeInfo, setDevBridgeInfo] = useState<DevBridgeInfo | null>(
+    null,
+  );
+  const shouldUseDevBridge = !endpoint && devBridgeStatus === "connected";
 
   // Draggable toolbar state
   const [toolbarPosition, setToolbarPosition] = useState<{
@@ -953,6 +974,100 @@ const [settings, setSettings] = useState<ToolbarSettings>(() => {
     initSession();
   }, [endpoint, initialSessionId, mounted, onSessionCreated, pathname]);
 
+  // Discover same-origin dev bridge routes exposed by a Vite/plugin proxy.
+  useEffect(() => {
+    if (!mounted || endpoint || !isDevMode) return;
+
+    let cancelled = false;
+
+    const checkDevBridge = async () => {
+      setDevBridgeStatus((status) =>
+        status === "connected" ? "connected" : "connecting",
+      );
+
+      try {
+        const info = await getDevBridgeStatus();
+        if (cancelled) return;
+
+        if (!info) {
+          setDevBridgeStatus("disconnected");
+          setDevBridgeInfo(null);
+          return;
+        }
+
+        setDevBridgeStatus("connected");
+        setDevBridgeInfo(info);
+      } catch {
+        if (!cancelled) {
+          setDevBridgeStatus("disconnected");
+          setDevBridgeInfo(null);
+        }
+      }
+    };
+
+    checkDevBridge();
+    const interval = originalSetInterval(checkDevBridge, 10000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [endpoint, isDevMode, mounted]);
+
+  // Listen for same-origin dev bridge events. This is independent from MCP
+  // session events; it lets a local bridge push agent replies/status later.
+  useEffect(() => {
+    if (!mounted || endpoint || devBridgeStatus !== "connected") return;
+    if (!hasDevBridgeEventStream(devBridgeInfo)) return;
+
+    const eventSource = createDevBridgeEventSource();
+
+    const handler = (e: MessageEvent) => {
+      try {
+        const event = JSON.parse(e.data);
+        const payload = event.payload;
+        if (!payload?.id) return;
+
+        if (event.type === "annotation.updated" || event.type === "annotation.reply") {
+          if (payload.status === "resolved" || payload.status === "dismissed") {
+            setExitingMarkers((prev) => new Set(prev).add(payload.id));
+            originalSetTimeout(() => {
+              setAnnotations((prev) => prev.filter((a) => a.id !== payload.id));
+              setExitingMarkers((prev) => {
+                const next = new Set(prev);
+                next.delete(payload.id);
+                return next;
+              });
+            }, 150);
+            return;
+          }
+
+          setAnnotations((prev) =>
+            prev.map((annotation) =>
+              annotation.id === payload.id ? { ...annotation, ...payload } : annotation,
+            ),
+          );
+        }
+      } catch {
+        // Ignore non-JSON keepalive comments and malformed events.
+      }
+    };
+
+    eventSource.addEventListener("message", handler);
+    eventSource.addEventListener("annotation.updated", handler);
+    eventSource.addEventListener("annotation.reply", handler);
+    eventSource.addEventListener("error", () => {
+      setDevBridgeStatus("disconnected");
+    });
+
+    return () => {
+      eventSource.removeEventListener("message", handler);
+      eventSource.removeEventListener("annotation.updated", handler);
+      eventSource.removeEventListener("annotation.reply", handler);
+      eventSource.close();
+    };
+  }, [devBridgeInfo, devBridgeStatus, endpoint, mounted]);
+
   // Periodic health check for server connection
   useEffect(() => {
     if (!endpoint || !mounted) return;
@@ -1182,6 +1297,8 @@ const [settings, setSettings] = useState<ToolbarSettings>(() => {
             },
             nearbyText: getNearbyText(element),
             cssClasses: getElementClasses(element),
+            status: "pending",
+            thread: [createThreadMessage("human", demo.comment)],
           };
 
           setAnnotations((prev) => [...prev, newAnnotation]);
@@ -2613,6 +2730,8 @@ const [settings, setSettings] = useState<ToolbarSettings>(() => {
         reactComponents: pendingAnnotation.reactComponents,
         sourceFile: pendingAnnotation.sourceFile,
         elementBoundingBoxes: pendingAnnotation.elementBoundingBoxes,
+        status: "pending",
+        thread: [createThreadMessage("human", comment)],
         // Protocol fields for server sync
         ...(endpoint && currentSessionId
           ? {
@@ -2621,7 +2740,6 @@ const [settings, setSettings] = useState<ToolbarSettings>(() => {
                 typeof window !== "undefined"
                   ? window.location.href
                   : undefined,
-              status: "pending" as const,
             }
           : {}),
       };
@@ -2675,6 +2793,28 @@ const [settings, setSettings] = useState<ToolbarSettings>(() => {
           .catch((error) => {
             console.warn("[Agentation] Failed to sync annotation:", error);
           });
+      } else if (shouldUseDevBridge) {
+        createDevBridgeComment(newAnnotation)
+          .then((bridgeAnnotation) => {
+            if (!bridgeAnnotation.id || bridgeAnnotation.id === newAnnotation.id) return;
+
+            setAnnotations((prev) =>
+              prev.map((a) =>
+                a.id === newAnnotation.id
+                  ? { ...bridgeAnnotation, _syncedTo: a._syncedTo }
+                  : a,
+              ),
+            );
+            setAnimatedMarkers((prev) => {
+              const next = new Set(prev);
+              next.delete(newAnnotation.id);
+              next.add(bridgeAnnotation.id);
+              return next;
+            });
+          })
+          .catch((error) => {
+            console.warn("[Agentation] Failed to send annotation to dev bridge:", error);
+          });
       }
     },
     [
@@ -2683,6 +2823,7 @@ const [settings, setSettings] = useState<ToolbarSettings>(() => {
       fireWebhook,
       endpoint,
       currentSessionId,
+      shouldUseDevBridge,
     ],
   );
 
@@ -2817,7 +2958,7 @@ const [settings, setSettings] = useState<ToolbarSettings>(() => {
     (newComment: string) => {
       if (!editingAnnotation) return;
 
-      const updatedAnnotation = { ...editingAnnotation, comment: newComment };
+      const updatedAnnotation = updateAnnotationComment(editingAnnotation, newComment);
 
       setAnnotations((prev) =>
         prev.map((a) =>
@@ -2833,9 +2974,19 @@ const [settings, setSettings] = useState<ToolbarSettings>(() => {
       if (endpoint) {
         updateAnnotationOnServer(endpoint, editingAnnotation.id, {
           comment: newComment,
+          thread: updatedAnnotation.thread,
+          status: updatedAnnotation.status,
+          updatedAt: updatedAnnotation.updatedAt,
         }).catch((error) => {
           console.warn(
             "[Agentation] Failed to update annotation on server:",
+            error,
+          );
+        });
+      } else if (shouldUseDevBridge) {
+        updateDevBridgeComment(updatedAnnotation).catch((error) => {
+          console.warn(
+            "[Agentation] Failed to send annotation update to dev bridge:",
             error,
           );
         });
@@ -2850,7 +3001,128 @@ const [settings, setSettings] = useState<ToolbarSettings>(() => {
         setEditExiting(false);
       }, 150);
     },
-    [editingAnnotation, onAnnotationUpdate, fireWebhook, endpoint],
+    [editingAnnotation, onAnnotationUpdate, fireWebhook, endpoint, shouldUseDevBridge],
+  );
+
+  const replyToAnnotation = useCallback(
+    (reply: string) => {
+      if (!editingAnnotation) return;
+
+      const message = createThreadMessage("human", reply);
+      const updatedAnnotation: Annotation = {
+        ...withThread(editingAnnotation),
+        thread: [...getAnnotationThread(editingAnnotation), message],
+        updatedAt: new Date().toISOString(),
+      };
+
+      setEditingAnnotation(updatedAnnotation);
+      setAnnotations((prev) =>
+        prev.map((a) =>
+          a.id === editingAnnotation.id ? updatedAnnotation : a,
+        ),
+      );
+
+      onAnnotationUpdate?.(updatedAnnotation);
+      fireWebhook("annotation.reply", {
+        annotation: updatedAnnotation,
+        message,
+      });
+
+      if (endpoint) {
+        updateAnnotationOnServer(endpoint, editingAnnotation.id, {
+          thread: updatedAnnotation.thread,
+          status: updatedAnnotation.status,
+          updatedAt: updatedAnnotation.updatedAt,
+        }).catch((error) => {
+          console.warn(
+            "[Agentation] Failed to sync annotation reply:",
+            error,
+          );
+        });
+      } else if (shouldUseDevBridge) {
+        replyToDevBridgeComment(editingAnnotation.id, message).catch((error) => {
+          console.warn(
+            "[Agentation] Failed to send annotation reply to dev bridge:",
+            error,
+          );
+        });
+      }
+    },
+    [editingAnnotation, onAnnotationUpdate, fireWebhook, endpoint, shouldUseDevBridge],
+  );
+
+  const changeAnnotationStatus = useCallback(
+    (status: AnnotationStatus) => {
+      if (!editingAnnotation) return;
+
+      const message = createThreadMessage(
+        "system",
+        `Status changed to ${getAnnotationStatusLabel(status)}`,
+        "status_change",
+      );
+      const updatedAnnotation: Annotation = {
+        ...withThread(editingAnnotation),
+        status,
+        thread: [...getAnnotationThread(editingAnnotation), message],
+        updatedAt: new Date().toISOString(),
+        ...(status === "resolved"
+          ? { resolvedAt: new Date().toISOString(), resolvedBy: "human" as const }
+          : {}),
+      };
+
+      setEditingAnnotation(updatedAnnotation);
+      setAnnotations((prev) =>
+        prev.map((a) =>
+          a.id === editingAnnotation.id ? updatedAnnotation : a,
+        ),
+      );
+
+      onAnnotationUpdate?.(updatedAnnotation);
+      fireWebhook("annotation.status", {
+        annotation: updatedAnnotation,
+        message,
+      });
+
+      if (endpoint) {
+        updateAnnotationOnServer(endpoint, editingAnnotation.id, {
+          status: updatedAnnotation.status,
+          thread: updatedAnnotation.thread,
+          updatedAt: updatedAnnotation.updatedAt,
+          resolvedAt: updatedAnnotation.resolvedAt,
+          resolvedBy: updatedAnnotation.resolvedBy,
+        }).catch((error) => {
+          console.warn(
+            "[Agentation] Failed to sync annotation status:",
+            error,
+          );
+        });
+      } else if (shouldUseDevBridge) {
+        updateDevBridgeCommentStatus(
+          editingAnnotation.id,
+          updatedAnnotation.status ?? "pending",
+          {
+            resolvedAt: updatedAnnotation.resolvedAt,
+            resolvedBy: updatedAnnotation.resolvedBy,
+          },
+        ).catch((error) => {
+          console.warn(
+            "[Agentation] Failed to send annotation status to dev bridge:",
+            error,
+          );
+        });
+      }
+
+      if (status === "resolved" || status === "dismissed") {
+        setEditExiting(true);
+        originalSetTimeout(() => {
+          setEditingAnnotation(null);
+          setEditingTargetElement(null);
+          setEditingTargetElements([]);
+          setEditExiting(false);
+        }, 150);
+      }
+    },
+    [editingAnnotation, onAnnotationUpdate, fireWebhook, endpoint, shouldUseDevBridge],
   );
 
   // Cancel editing with exit animation
@@ -3509,7 +3781,11 @@ const [settings, setSettings] = useState<ToolbarSettings>(() => {
 
   // Filter annotations for rendering (exclude exiting ones from normal flow)
   const visibleAnnotations = annotations.filter(
-    (a) => !exitingMarkers.has(a.id) && a.kind !== "placement" && a.kind !== "rearrange",
+    (a) =>
+      isRenderableAnnotation(a) &&
+      !exitingMarkers.has(a.id) &&
+      a.kind !== "placement" &&
+      a.kind !== "rearrange",
   );
   const hasVisibleAnnotations = visibleAnnotations.length > 0;
   const exitingAnnotationsList = annotations.filter((a) =>
@@ -3991,6 +4267,8 @@ const [settings, setSettings] = useState<ToolbarSettings>(() => {
             isDevMode={isDevMode}
             connectionStatus={connectionStatus}
             endpoint={endpoint}
+            devBridgeStatus={devBridgeStatus}
+            devBridgeInfo={devBridgeInfo}
             isVisible={showSettingsVisible}
             toolbarNearBottom={!!toolbarPosition && toolbarPosition.y < 230}
             settingsPage={settingsPage}
@@ -4655,7 +4933,11 @@ const [settings, setSettings] = useState<ToolbarSettings>(() => {
                 placeholder="Edit your feedback..."
                 initialValue={editingAnnotation.comment}
                 submitLabel="Save"
+                thread={getAnnotationThread(editingAnnotation)}
+                status={editingAnnotation.status ?? "pending"}
                 onSubmit={updateAnnotation}
+                onReply={replyToAnnotation}
+                onStatusChange={changeAnnotationStatus}
                 onCancel={cancelEditAnnotation}
                 onDelete={() => deleteAnnotation(editingAnnotation.id)}
                 isExiting={editExiting}

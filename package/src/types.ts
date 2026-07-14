@@ -74,7 +74,14 @@ export type Annotation = {
 
 export type AnnotationIntent = "fix" | "change" | "question" | "approve";
 export type AnnotationSeverity = "blocking" | "important" | "suggestion";
-export type AnnotationStatus = "pending" | "acknowledged" | "resolved" | "dismissed";
+export type AnnotationStatus =
+  | "pending"
+  | "acknowledged"
+  | "working"
+  | "needs_review"
+  | "resolved"
+  | "blocked"
+  | "dismissed";
 
 // -----------------------------------------------------------------------------
 // Session
@@ -102,8 +109,8 @@ export type SessionWithAnnotations = Session & {
 
 export type ThreadMessage = {
   id: string;
-  role: "human" | "agent";
+  role: "human" | "agent" | "system";
   content: string;
   timestamp: number;
+  kind?: "comment" | "status_change" | "code_change" | "test_result";
 };
-

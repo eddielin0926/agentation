@@ -1,4 +1,5 @@
-import { Annotation } from "../../../types";
+import type { Annotation } from "../../../types";
+import { getAnnotationStatusLabel } from "../../../utils/annotation-thread";
 import { IconEdit, IconPlus, IconXmark } from "../../icons";
 import styles from "./styles.module.scss";
 
@@ -51,6 +52,8 @@ export function AnnotationMarker({
   const showDeleteState = (isHovered || isDeleting) && !isEditingAny;
   const showDeleteHover = showDeleteState && markerClickBehavior === "delete";
   const isMulti = annotation.isMultiSelect;
+  const status = annotation.status ?? "pending";
+  const replyCount = Math.max(0, (annotation.thread?.length ?? 1) - 1);
 
   const markerColor = isMulti
     ? "var(--agentation-color-green)"
@@ -123,6 +126,10 @@ export function AnnotationMarker({
             {annotation.element}
             {annotation.selectedText &&
               ` "${annotation.selectedText.slice(0, 30)}${annotation.selectedText.length > 30 ? "..." : ""}"`}
+          </span>
+          <span className={styles.markerStatus}>
+            {getAnnotationStatusLabel(status)}
+            {replyCount > 0 ? ` · ${replyCount} ${replyCount === 1 ? "reply" : "replies"}` : ""}
           </span>
           <span className={styles.markerNote}>{annotation.comment}</span>
         </div>

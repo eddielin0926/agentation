@@ -964,6 +964,30 @@ export function startHttpServer(port: number, apiKey?: string): void {
       });
     }
 
+    // Same-origin dev bridge discovery aliases. A Vite/plugin proxy can expose
+    // these paths from the app origin without changing the browser protocol.
+    if (pathname === "/__agentation/status" && method === "GET") {
+      const webhookUrls = getWebhookUrls();
+      return sendJson(res, 200, {
+        ok: true,
+        mode: isCloudMode() ? "cloud" : "local",
+        bridge: "mcp-http",
+        agent: {
+          connected: agentConnections.size > 0,
+          type: "mcp",
+          listeners: agentConnections.size,
+        },
+        capabilities: ["status", "events", "sessions", "annotations", "replies", "status_updates", "actions", "sse"],
+        webhooksConfigured: webhookUrls.length > 0,
+        webhookCount: webhookUrls.length,
+        activeListeners: sseConnections.size,
+      });
+    }
+
+    if (pathname === "/__agentation/events" && method === "GET") {
+      return globalSseHandler(req, res, {});
+    }
+
     // MCP protocol endpoint (always local - allows Claude Code to connect)
     if (pathname === "/mcp") {
       return handleMcp(req, res);

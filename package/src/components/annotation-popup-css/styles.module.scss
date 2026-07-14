@@ -229,6 +229,97 @@
 }
 
 // =============================================================================
+// Thread
+// =============================================================================
+
+.threadPanel {
+  margin-bottom: 0.5rem;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.statusLabel {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.statusPill,
+.statusSelect {
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border-radius: 999px;
+}
+
+.statusPill {
+  padding: 0.25rem 0.5rem;
+  color: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.statusSelect {
+  max-width: 128px;
+  padding: 0.25rem 1.5rem 0.25rem 0.5rem;
+  color: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  outline: none;
+  cursor: pointer;
+}
+
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  max-height: 150px;
+  overflow-y: auto;
+  padding-right: 0.125rem;
+}
+
+.threadMessage {
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.065);
+
+  &.agent {
+    background: color-mix(in srgb, var(--agentation-color-blue) 16%, transparent);
+    border-color: color-mix(in srgb, var(--agentation-color-blue) 20%, transparent);
+  }
+
+  &.system {
+    background: rgba(255, 255, 255, 0.035);
+  }
+}
+
+.threadMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.1875rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.42);
+  text-transform: capitalize;
+}
+
+.threadContent {
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.86);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+// =============================================================================
 // Textarea
 // =============================================================================
 
@@ -269,6 +360,54 @@
   &::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.2);
     border-radius: 3px;
+  }
+}
+
+.replyBox {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+}
+
+.replyTextarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.75rem;
+  font-family: inherit;
+  background: rgba(255, 255, 255, 0.035);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  resize: none;
+  outline: none;
+  transition: border-color 0.15s ease;
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+  }
+}
+
+.replySubmit {
+  padding: 0.32rem 0.7rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    filter 0.15s ease,
+    opacity 0.15s ease;
+
+  &:hover:not(:disabled) {
+    filter: brightness(0.9);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
   }
 }
 
@@ -399,6 +538,32 @@
     background: rgba(0, 0, 0, 0.04);
   }
 
+  .statusLabel,
+  .threadMeta {
+    color: rgba(0, 0, 0, 0.45);
+  }
+
+  .statusPill,
+  .statusSelect {
+    color: rgba(0, 0, 0, 0.72);
+    background: rgba(0, 0, 0, 0.045);
+    border-color: rgba(0, 0, 0, 0.08);
+  }
+
+  .threadMessage {
+    background: rgba(0, 0, 0, 0.035);
+    border-color: rgba(0, 0, 0, 0.055);
+
+    &.agent {
+      background: color-mix(in srgb, var(--agentation-color-blue) 11%, transparent);
+      border-color: color-mix(in srgb, var(--agentation-color-blue) 18%, transparent);
+    }
+  }
+
+  .threadContent {
+    color: rgba(0, 0, 0, 0.78);
+  }
+
   .textarea {
     background: rgba(0, 0, 0, 0.03);
     color: #1a1a1a;
@@ -410,6 +575,16 @@
 
     &::-webkit-scrollbar-thumb {
       background: rgba(0, 0, 0, 0.15);
+    }
+  }
+
+  .replyTextarea {
+    background: rgba(0, 0, 0, 0.025);
+    color: #1a1a1a;
+    border-color: rgba(0, 0, 0, 0.1);
+
+    &::placeholder {
+      color: rgba(0, 0, 0, 0.38);
     }
   }
 
