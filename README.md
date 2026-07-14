@@ -33,6 +33,53 @@ function App() {
 
 The toolbar appears in the bottom-right corner. Click to activate, then click any element to annotate it.
 
+## Vite dev bridge
+
+This fork includes an experimental Vite dev bridge for component-comment agent
+loops. The bridge exposes same-origin `__agentation` routes during local
+development, so the browser toolbar can create comments, receive replies over
+SSE, and hand work to a local agent adapter without CORS or manual proxy setup.
+
+```ts
+// vite.config.ts
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+import agentation from "vite-plugin-agentation";
+
+export default defineConfig({
+  plugins: [
+    react(),
+    agentation({
+      agentCommand: ["node", "scripts/agentation-agent.js"],
+    }),
+  ],
+});
+```
+
+The local loop is:
+
+```text
+component comment
+  -> POST /__agentation/comments
+  -> Vite dev bridge
+  -> mock/custom/command agent adapter
+  -> annotation reply + status events
+  -> toolbar thread update
+```
+
+Run the Vite playground:
+
+```bash
+corepack pnpm@10 install
+corepack pnpm@10 --filter agentation build
+corepack pnpm@10 --filter vite-plugin-agentation build
+corepack pnpm@10 vite:example
+```
+
+Then open the printed Vite URL and leave a comment on a component. See
+[`vite-plugin/README.md`](vite-plugin/README.md) for the `__agentation` route
+contract, mock adapter, command adapter, and fallback behavior.
+
 ## Features
 
 - **Click to annotate** – Click any element with automatic selector identification
